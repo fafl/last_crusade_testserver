@@ -94,6 +94,10 @@ def debug(*args):
     print(*args, file=sys.stderr)
 
 
+def read_state(p):
+    return p.stdout.readline().decode('utf8').rstrip()
+
+
 def send_data(p, data):
     print('->', data)
     p.stdin.write((str(data) + '\n').encode('utf8'))
@@ -266,7 +270,7 @@ def run_testcase(input_path, p):
     while is_game_over == 0:
         send_state(p, t, indy, rocks)
         try:
-            decision = p.stdout.readline().decode('utf8').rstrip()
+            decision = read_state(p)
             print('<-', decision)
             last = now
             now = time.time()
@@ -278,7 +282,7 @@ def run_testcase(input_path, p):
             t += 1
         except ValueError as e:
             print(e)
-            return False, now - start_time
+            return False, now - start_time, longest_turn
 
     return True, now - start_time, longest_turn
 
