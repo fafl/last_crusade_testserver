@@ -95,7 +95,9 @@ def debug(*args):
 
 
 def read_state(p):
-    return p.stdout.readline().decode('utf8').rstrip()
+    state = p.stdout.readline().decode('utf8').rstrip()
+    print('<-', state)
+    return state
 
 
 def send_data(p, data):
@@ -120,16 +122,16 @@ def apply_decision(maze, decision, indy, rocks):
     y = int(y)
     indy_x, indy_y, _ = indy
     if (x, y) == (indy_x, indy_y):
-        raise ValueError('Unable to rotate room with indy inside at', x, y)
+        raise ValueError(f'Unable to rotate room with indy inside at {x} {y}')
     for rock in rocks:
         rock_x, rock_y, _, _ = rock
         if (x, y) == (rock_x, rock_y):
-            raise ValueError('Unable to rotate room with a rock inside at', x, y)
+            raise ValueError(f'Unable to rotate room with a rock inside at {x} {y}')
     room = maze[y][x]
     if room < 1:
-        raise ValueError('Room', x, y, 'has layout', room, 'and can not be rotated')
+        raise ValueError(f'Room {x} {y} has layout {room} and can not be rotated')
     if rotation not in ['LEFT', 'RIGHT']:
-        raise ValueError('Rotation must be either LEFT or RIGHT but is', rotation)
+        raise ValueError(f'Rotation must be either LEFT or RIGHT but is {rotation}')
     new_room = ROTATIONS[room][rotation == 'RIGHT']
     maze[int(y)][int(x)] = new_room
 
@@ -143,19 +145,19 @@ def tick(maze, maze_exit, t, indy, rocks):
     room = maze[y][x]
     exit_dir = TURNS[abs(room)][entry_dir]
     if exit_dir == Dir.CRASH:
-        raise ValueError('Indy has no exit from room', x, y)
+        raise ValueError(f'Indy has no exit from room {x} {y}')
     new_x, new_y = exit_dir.get_new_coordinates(x, y)
     new_entry_dir = exit_dir.opposite()
     new_room = maze[new_y][new_x]
     if new_entry_dir in TURNS[abs(new_room)]:
         indy = (new_x, new_y, new_entry_dir)
     else:
-        raise ValueError('Indy crashed into the wall of room', new_x, new_y)
+        raise ValueError(f'Indy crashed into the wall of room {new_x} {new_y}')
     if (new_x, new_y) == maze_exit:
-        print('Indy has reached the exit at', new_x, new_y)
+        print(f'Indy has reached the exit at {new_x} {new_y}')
         return None, None, True
 
-    # Keep track of rock to eliminate
+    # Keep track of rocks to eliminate
     eliminated_rocks = set()
     prev_rock_positions = []
 
@@ -178,7 +180,7 @@ def tick(maze, maze_exit, t, indy, rocks):
         if new_entry_dir in TURNS[abs(new_room)]:
             rocks[r] = (new_rock_x, new_rock_y, new_entry_dir, from_t)
         else:
-            print('Rock entering', new_rock_x, new_rock_y, 'from', new_entry_dir.name, 'crashed into a wall')
+            print(f'Rock entering {new_rock_x} {new_rock_y} from {new_entry_dir.name} crashed into a wall')
             eliminated_rocks.add(r)
             continue
 
@@ -186,8 +188,7 @@ def tick(maze, maze_exit, t, indy, rocks):
         if (new_x, new_y) == (new_rock_x, new_rock_y) or (
             (x, y) == (new_rock_x, new_rock_y) and (new_x, new_y) == (rock_x, rock_y)
         ):
-            print('Indy crashed into a rock in', new_x, new_y)
-            raise ValueError('Indy crashed into a rock in room', new_x, new_y)
+            raise ValueError(f'Indy crashed into a rock in room {new_x} {new_y}')
 
     # Check rocks crashing into each other
     for r1 in range(len(rocks) - 1):
@@ -203,12 +204,12 @@ def tick(maze, maze_exit, t, indy, rocks):
                 continue
             x2prev, y2prev = prev_rock_positions[r2]
             if (x1, y1) == (x2, y2):
-                print('Rocks from', x1prev, y1prev, 'and', x2prev, y2prev, 'will crash in', x1, y1)
+                print(f'Rocks from {x1prev} {y1prev} and {x2prev} {y2prev} will crash in {x1} {y1}')
                 eliminated_rocks.add(r1)
                 eliminated_rocks.add(r2)
                 break
             if (x1, y1) == (x2prev, y2prev) and (x1prev, y1prev) == (x2, y2):
-                print('Rocks from', x1prev, y1prev, 'and', x2prev, y2prev, 'will crash into each other')
+                print(f'Rocks from {x1prev} {y1prev} and {x2prev} {y2prev} will crash into each other')
                 eliminated_rocks.add(r1)
                 eliminated_rocks.add(r2)
                 break
@@ -224,7 +225,7 @@ def tick(maze, maze_exit, t, indy, rocks):
     for r in reversed(sorted(eliminated_rocks)):
         rocks.pop(r)
 
-    return indy, rocks, 0
+    return indy, rocks, False
 
 
 def run_testcase(input_path, p):
@@ -263,23 +264,23 @@ def run_testcase(input_path, p):
     send_data(p, f'{maze_exit[0]}')
 
     # Play until done
-    t = 0
-    is_game_over = False
+    is_indy_at_exit = False
     now = start_time = time.time()
     longest_turn = 0
-    while is_game_over == 0:
+    for t in range(1000):
         send_state(p, t, indy, rocks)
         try:
             decision = read_state(p)
-            print('<-', decision)
             last = now
             now = time.time()
             if last != 0:
                 longest_turn = max(longest_turn, now - last)
-            print('t is', t, 'and time elapsed is', now - start_time)
+            print(f't is {t} and time elapsed is {now - start_time}')
             apply_decision(maze, decision, indy, rocks)
-            indy, rocks, is_game_over = tick(maze, maze_exit, t, indy, rocks)
-            t += 1
+            indy, rocks, is_indy_at_exit = tick(maze, maze_exit, t, indy, rocks)
+            if is_indy_at_exit:
+                break
+
         except ValueError as e:
             print(e)
             return False, now - start_time, longest_turn
@@ -291,11 +292,11 @@ def main():
     command = sys.argv[1:]
     runs = []
     for level in LEVEL_FILES:
-        print('Running level', level)
+        print(f'Running level {level}')
         with open('stderr.out', 'w') as stderr_out_file:
 
             # Start child process
-            print('Running command:', command)
+            print(f'Running command: {command}')
             p = Popen(command, stdin=PIPE, stdout=PIPE, stderr=stderr_out_file)
 
             # Play a game
